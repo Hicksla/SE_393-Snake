@@ -39,14 +39,16 @@ public:
 
     // game room co-ordinates
 
-    const int ROOM_WIDTH = 32;
-    const int ROOM_HEIGHT = 32;
-    QPoint roomPoints[32][32] = {};
+    const int ROOM_WIDTH = 100; // must be factor of 800
+    const int ROOM_HEIGHT = 100; // must be the same as width
+    QPoint roomPoints[100][100] = {};
+    int tileScale;
 
-    int room[32][32] = {};
-    QPoint snake[32*32] = {};
+    int room[100][100] = {};
+    QPoint snake[100*100] = {};
     int snakeLen = 2;
     QColor snakeColor = QColor(0,255,0);
+
 
     int dir = 0;
     int speed = 300;
