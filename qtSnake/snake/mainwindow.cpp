@@ -6,6 +6,18 @@ MainWindow::MainWindow(QWidget *parent)
     , ui(new Ui::MainWindow)
 {
 
+    // multiplayer
+    connectToServer(QHostAddress("127.0.0.1"), 8000);
+
+    // timer to send and read tcp data
+    connect(multTimer, &QTimer::timeout, this, &MainWindow::readData);
+    connect(multTimer, &QTimer::timeout, this, &MainWindow::sendData);
+
+    // start the timer
+    multTimer->start(1000);
+
+    // end mutliplayer
+
     tileScale = 800/ROOM_WIDTH;
     // initialize room to 0
     for (int i = 0; i < ROOM_WIDTH; i++) {
@@ -25,8 +37,10 @@ MainWindow::MainWindow(QWidget *parent)
         room[i][ROOM_WIDTH-1] = 1;
     }
 
-    // intialize food
-    room[20][20] = 4;
+    // initialize food positions
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        foodPos[i] = QPoint(-1,-2);
+    }
 
     // initialize snake
     initSnake();
@@ -52,30 +66,18 @@ void MainWindow::paintEvent(QPaintEvent *event) {
     for (int i = 0; i < ROOM_WIDTH; i++) {
         for (int j = 0; j < ROOM_HEIGHT; j++) {
             QBrush brush;
-            if (room[i][j] == 1) {// wall
-                brush.setColor(QColor(0,255,255));
-            }
-            // don't think this does anything, the value is never set to 2
-            else if (room[i][j] == 2) {// snake head
-                brush.setColor(QColor(255,0,0));
-            }
-            // don't think this does anything, the value is never set to 3
-            else if (room[i][j] == 3) {// snake
-                brush.setColor(QColor(255,0,0));
-            }
-            else if (room[i][j] == 4) {// food
-                brush.setColor(QColor(0,0,255));
+            if (room[i][j] == 1) {// wall (draw same color as snake so it is clear which one is you)
+                brush.setColor(((socketId==-1)?QColor(0,255,0):snakeColors[socketId]));
             }
             else {// background
                brush.setColor(QColor(0,0,0));
-
             }
 
             // actually draw the tiles
             painter.setPen(Qt::NoPen);
             brush.setStyle(Qt::SolidPattern);
             painter.setBrush(brush);
-            painter.drawRect(tileScale*roomPoints[i][j].x(), tileScale*roomPoints[i][j].y(), tileScale,tileScale);
+            painter.drawRect(tileScale*roomPoints[i][j].x(), tileScale*roomPoints[i][j].y(), tileScale,tileScale); // don't think this needs to be roomPoints
         }
     }
 
@@ -83,11 +85,27 @@ void MainWindow::paintEvent(QPaintEvent *event) {
     QBrush brush;
     painter.setPen(Qt::NoPen);
     brush.setStyle(Qt::SolidPattern);
-    brush.setColor(snakeColor);
+    // this sets the color to green if client isn't connected yet
+    brush.setColor(((socketId==-1)?QColor(0,255,0):snakeColors[socketId]));
     painter.setBrush(brush);
     // draw the snake on top of the room
     for(QPoint p : snake) {
         painter.drawRect(tileScale*p.x(), tileScale*p.y(), tileScale,tileScale);
+    }
+
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        // paint the food
+        brush.setColor(QColor(0,0,255));
+        painter.setBrush(brush);
+        painter.drawRect(tileScale*foodPos[i].x(), tileScale*foodPos[i].y(), tileScale, tileScale);
+
+        //set up altSnake pen
+        brush.setColor(snakeColors[i]);
+        painter.setBrush(brush);
+        // draw the altSnake on top of the room
+        for(QPoint p : altSnake[i]) {
+            painter.drawRect(tileScale*p.x(), tileScale*p.y(), tileScale,tileScale);
+        }
     }
 }
 
@@ -115,12 +133,28 @@ void MainWindow::movePlayer() {
         }
     }
 
+    // check if snake hits other snakes or other foods
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        for (QPoint p : altSnake[i]) {
+            if (p == QPoint(-1,-1)) break;
+            if (p==newPos) {
+                endRun();
+                return;
+            }
+            // each client is in charge of changing it's food tile
+            if (p == foodPos[socketId]) {
+                genNewFood();
+                qDebug() << "alt eat";
+            }
+        }
+    }
+
     // if snake hits wall
     if (room[newPos.x()][newPos.y()] == 1) {
         endRun();
     }
     // if snake eats food
-    else if (room[newPos.x()][newPos.y()] == 4) {
+    else if (snakeEatFood(newPos)) {
         snakeLen++;
         if (speed > 100) {
             speed -= 100;
@@ -128,8 +162,7 @@ void MainWindow::movePlayer() {
             timer->start(speed);
         }
         snakeEat(newPos);
-        room[newPos.x()][newPos.y()] = 0;
-        room[QRandomGenerator::global()->bounded(ROOM_WIDTH-4)+2][(QRandomGenerator::global()->bounded(ROOM_HEIGHT-4))+2] = 4;
+        if (newPos == foodPos[socketId]) genNewFood();
     }
     else {
         snakeMove(newPos);
@@ -222,11 +255,18 @@ void MainWindow::setDifficulty(int diff) {
 }
 
 void MainWindow::endRun() {
+    for (int i = 0; i < ROOM_HEIGHT*ROOM_WIDTH; i++) {
+        snake[i] = QPoint(-1,-1);
+    }
+    foodPos[socketId] = QPoint(-1,-2);
+    sendData();
     timer->stop();
     if (QMessageBox::question(this,"You died", "Your length was: "+QString::number(snakeLen)+"\nWould you like to restart?") == QMessageBox::Yes) {
         restartRun();
     } else {
-        qApp->quit();
+
+        this->update();
+        QCoreApplication::quit();
     }
 }
 
@@ -246,6 +286,16 @@ void MainWindow::initSnake() {
     speed = difficulty;
     timer->stop();
     timer->start(speed);
+
+    // multiplayer
+    // set the entire snake to be off the screen
+    for (int j = 0; j<MAX_CLIENTS; j++) {
+        for (int i = 0; i < ROOM_HEIGHT*ROOM_WIDTH; i++) {
+            altSnake[j][i] = QPoint(-1,-1);
+        }
+    }
+
+    genNewFood();
     this->update();
 }
 
@@ -253,10 +303,114 @@ void MainWindow::restartRun() {
     initSnake();
 }
 
-void MainWindow::setSnakeColor(QColor color) {
-    snakeColor = color;
+//void MainWindow::setSnakeColor(QColor color) {
+//    snakeColor = color;
+//}
+
+//void MainWindow::setSnakeColor(int red, int green, int blue) {
+//    snakeColor = QColor(red, green, blue);
+//}
+
+// multiplayer
+void MainWindow::connectToServer(const QHostAddress &address, quint16 port) {
+    clientSocket.connectToHost(address, port);
 }
 
-void MainWindow::setSnakeColor(int red, int green, int blue) {
-    snakeColor = QColor(red, green, blue);
+void MainWindow::readData() {
+    if (socketId == -1) {
+        setId();
+        return;
+    }
+
+    QString data(clientSocket.readAll());
+    if (data=="") return;
+    QStringList strList = data.split("_");
+
+    // figure out socket id of incoming snake
+    bool ok;
+    int altSnakeSocketId = strList[0].toInt(&ok);
+    if (!ok) return;
+
+    // figure out food position of this altSnake
+    QStringList newFoodData = strList[1].split(",");
+    bool foodXOk, foodYOk;
+    int foodX = newFoodData[0].toInt(&foodXOk);
+    int foodY = newFoodData[1].toInt(&foodYOk);
+    if (foodXOk && foodYOk) {
+        foodPos[altSnakeSocketId].setX(foodX);
+        foodPos[altSnakeSocketId].setY(foodY);
+    }
+
+    // set altsnake array
+    QStringList altSnakeStrList1 = strList[2].split(":");
+    for (int i = 0; i < ROOM_HEIGHT*ROOM_WIDTH; i++) {
+        QStringList altSnakeStrList2 = altSnakeStrList1[i].split(",");
+        bool xOk, yOk;
+        int altSnakeX = altSnakeStrList2[0].toInt(&xOk);
+        int altSnakeY = altSnakeStrList2[1].toInt(&yOk);
+        if (xOk&&yOk) {
+            altSnake[altSnakeSocketId][i] = QPoint(altSnakeX,altSnakeY);
+        }
+    }
+
+    multTimer->stop();
+    multTimer->start(50);
+    this->update();
+}
+
+void MainWindow::setId() {
+    // split at '$' because the first sent data will be the socketId, but there may be extra data in the buffer (from other clients)
+    QByteArrayList data = clientSocket.readAll().split('$');
+    bool ok;
+    int tmpSocketId = data[0].toInt(&ok);
+    if (ok) {
+        socketId = tmpSocketId;
+        foodPos[0] = QPoint(-1,-2);
+        genNewFood();
+    }
+    qDebug() << socketId;
+}
+
+void MainWindow::sendData() {
+    // don't send data if we don't have a socketId yet
+    if (socketId == -1) {
+        return;
+    }
+
+    // construct our food position as a string
+    QString foodStr = QString::number(foodPos[socketId].x()) + "," + QString::number(foodPos[socketId].y());
+
+    // construct our snake as a string
+    QString snakeStr = QString::number(snake[0].x())+","+QString::number(snake[0].y());
+    for(int i = 1; i < ROOM_HEIGHT*ROOM_WIDTH; i++) {
+        snakeStr+=":"+QString::number(snake[i].x())+","+QString::number(snake[i].y());
+    }
+
+    // construct main data string
+    QString strData = QString::number(socketId)+"_" +foodStr+"_"+snakeStr;
+
+    // write the data as a QByteArray (that's the kind of data QTcpSocket deals with)
+    clientSocket.write(strData.toLocal8Bit());
+
+    multTimer->stop();
+    multTimer->start(50);
+}
+
+void MainWindow::genNewFood() {
+    // generate a new food position
+    // if this client isn't connected, use address 0 for food position
+    // generates a random point inside the room
+    foodPos[(socketId==-1)?0:socketId] = QPoint(QRandomGenerator::global()->bounded(ROOM_WIDTH-4)+2,(QRandomGenerator::global()->bounded(ROOM_HEIGHT-4))+2);
+}
+
+bool MainWindow::snakeEatFood(QPoint newPos) {
+    // checks if the snake is going to be on top of some food
+    // this is to clean up the movePlayer logic
+
+    for (QPoint p : foodPos) {
+        if (newPos == p) {
+            return true;
+        }
+    }
+    return false;
 }
