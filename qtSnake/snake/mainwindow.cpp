@@ -7,7 +7,8 @@ MainWindow::MainWindow(QWidget *parent)
 {
 
     // multiplayer
-    connectToServer(QHostAddress("127.0.0.1"), 8000);
+//    connectToServer(QHostAddress("ordos.xorsoftworks.com"), 8000);
+    connectToServer(QHostAddress("3.139.31.84"), 8000);
 
     // timer to send and read tcp data
     connect(multTimer, &QTimer::timeout, this, &MainWindow::readData);
@@ -90,6 +91,7 @@ void MainWindow::paintEvent(QPaintEvent *event) {
     painter.setBrush(brush);
     // draw the snake on top of the room
     for(QPoint p : snake) {
+        if (p == noSnake) break; // the snake is terminated by noSnake
         painter.drawRect(tileScale*p.x(), tileScale*p.y(), tileScale,tileScale);
     }
 
@@ -104,6 +106,7 @@ void MainWindow::paintEvent(QPaintEvent *event) {
         painter.setBrush(brush);
         // draw the altSnake on top of the room
         for(QPoint p : altSnake[i]) {
+            if (p == noSnake) break; // the snake is terminated by noSnake
             painter.drawRect(tileScale*p.x(), tileScale*p.y(), tileScale,tileScale);
         }
     }
@@ -127,6 +130,7 @@ void MainWindow::movePlayer() {
 
     // check if snake hits self
     for (QPoint p : snake) {
+        if (p == noSnake) break; // the snake is terminated by noSnake
         if (p == newPos&&dir!=0) {
             endRun();
             return;
@@ -136,7 +140,7 @@ void MainWindow::movePlayer() {
     // check if snake hits other snakes or other foods
     for (int i = 0; i < MAX_CLIENTS; i++) {
         for (QPoint p : altSnake[i]) {
-            if (p == QPoint(-1,-1)) break;
+            if (p == noSnake) break;
             if (p==newPos) {
                 endRun();
                 return;
@@ -256,9 +260,10 @@ void MainWindow::setDifficulty(int diff) {
 
 void MainWindow::endRun() {
     for (int i = 0; i < ROOM_HEIGHT*ROOM_WIDTH; i++) {
-        snake[i] = QPoint(-1,-1);
+        if (snake[i] == noSnake) break; // the snake is terminated by noSnake
+        snake[i] = noSnake;
     }
-    foodPos[socketId] = QPoint(-1,-2);
+    foodPos[socketId] = noFood;
     sendData();
     timer->stop();
     if (QMessageBox::question(this,"You died", "Your length was: "+QString::number(snakeLen)+"\nWould you like to restart?") == QMessageBox::Yes) {
@@ -275,7 +280,9 @@ void MainWindow::initSnake() {
 
     // set the entire snake to be off the screen
     for (int i = 0; i < ROOM_HEIGHT*ROOM_WIDTH; i++) {
-        snake[i] = QPoint(-1,-1);
+        // might not be able terminate at noSnake here because the snake may grow extra length when eating
+        // that may be prevented by snakeLen though
+        snake[i] = noSnake;
     }
 
     // sets the snake to a random position
@@ -291,7 +298,8 @@ void MainWindow::initSnake() {
     // set the entire snake to be off the screen
     for (int j = 0; j<MAX_CLIENTS; j++) {
         for (int i = 0; i < ROOM_HEIGHT*ROOM_WIDTH; i++) {
-            altSnake[j][i] = QPoint(-1,-1);
+            if (altSnake[j][i] == noSnake) break; // we can terminate here because we never change the length of altSnake, that is done by the other clients
+            altSnake[j][i] = noSnake;
         }
     }
 
@@ -350,6 +358,7 @@ void MainWindow::readData() {
         int altSnakeY = altSnakeStrList2[1].toInt(&yOk);
         if (xOk&&yOk) {
             altSnake[altSnakeSocketId][i] = QPoint(altSnakeX,altSnakeY);
+            if (QPoint(altSnakeX, altSnakeY) == noSnake) break; // break after the terminator is put in the array
         }
     }
 
@@ -384,10 +393,11 @@ void MainWindow::sendData() {
     QString snakeStr = QString::number(snake[0].x())+","+QString::number(snake[0].y());
     for(int i = 1; i < ROOM_HEIGHT*ROOM_WIDTH; i++) {
         snakeStr+=":"+QString::number(snake[i].x())+","+QString::number(snake[i].y());
+        if (snake[i] == noSnake) break; // break after adding the terminator (this should hopefully reduce latency)
     }
 
     // construct main data string
-    QString strData = QString::number(socketId)+"_" +foodStr+"_"+snakeStr;
+    QString strData = QString::number(socketId)+"_" +foodStr+"_"+snakeStr+"_";
 
     // write the data as a QByteArray (that's the kind of data QTcpSocket deals with)
     clientSocket.write(strData.toLocal8Bit());
