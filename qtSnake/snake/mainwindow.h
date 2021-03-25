@@ -64,6 +64,7 @@ public:
 
     QPoint altSnake[12][100*100] = {}; // MAX_CLIENTS
     QPoint foodPos[12] = {}; // MAX_CLIENTS
+    bool foodMap[12] = {}; // MAX_CLIENTS
     const int MAX_CLIENTS = 12;
 
     QPoint noSnake = QPoint(-1,-1); // spot to put snake null

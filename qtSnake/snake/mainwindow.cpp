@@ -8,7 +8,8 @@ MainWindow::MainWindow(QWidget *parent)
 
     // multiplayer
 //    connectToServer(QHostAddress("ordos.xorsoftworks.com"), 8000);
-    connectToServer(QHostAddress("3.139.31.84"), 8000);
+//    connectToServer(QHostAddress("3.139.31.84"), 8005);
+    connectToServer(QHostAddress("127.0.0.1"), 8005);
 
     // timer to send and read tcp data
     connect(multTimer, &QTimer::timeout, this, &MainWindow::readData);
@@ -40,7 +41,8 @@ MainWindow::MainWindow(QWidget *parent)
 
     // initialize food positions
     for (int i = 0; i < MAX_CLIENTS; i++) {
-        foodPos[i] = QPoint(-1,-2);
+        foodPos[i] = noFood;
+        foodMap[i] = true;
     }
 
     // initialize snake
@@ -97,9 +99,11 @@ void MainWindow::paintEvent(QPaintEvent *event) {
 
     for (int i = 0; i < MAX_CLIENTS; i++) {
         // paint the food
-        brush.setColor(QColor(0,0,255));
-        painter.setBrush(brush);
-        painter.drawRect(tileScale*foodPos[i].x(), tileScale*foodPos[i].y(), tileScale, tileScale);
+        if (foodMap[i]) {
+            brush.setColor(QColor(0,0,255));
+            painter.setBrush(brush);
+            painter.drawRect(tileScale*foodPos[i].x(), tileScale*foodPos[i].y(), tileScale, tileScale);
+        }
 
         //set up altSnake pen
         brush.setColor(snakeColors[i]);
@@ -186,7 +190,7 @@ void MainWindow::snakeMove(QPoint newPos) {
 
     // move the entire snake back one index in the array, DONT move the last snake segment (otherwise it would grow)
     for (int i = 0; i < snakeLen-1; i++) {
-        if (snake[i+1] == QPoint(-1,-1)) {
+        if (snake[i+1] == noSnake) {
             break;
         }
         tmp[i+1] = snake[i];
@@ -210,7 +214,7 @@ void MainWindow::snakeEat(QPoint newPos) {
 
     // move the entire snake back one index in the array
     for (int i = 0; i < snakeLen-1; i++) {
-        if (snake[i] == QPoint(-1,-1)) {
+        if (snake[i] == noSnake) {
             break;
         }
         tmp[i+1] = snake[i];
@@ -332,34 +336,45 @@ void MainWindow::readData() {
 
     QString data(clientSocket.readAll());
     if (data=="") return;
-    QStringList strList = data.split("_");
+    QStringList messages = data.split("#");
+//    qDebug() << messages.size();
+    for (QString& message : messages) {
+        QStringList strList = message.split("_");
 
-    // figure out socket id of incoming snake
-    bool ok;
-    int altSnakeSocketId = strList[0].toInt(&ok);
-    if (!ok) return;
+        // figure out socket id of incoming snake
+        bool ok;
+        int altSnakeSocketId = strList[0].toInt(&ok);
+        if (!ok) return;
 
-    // figure out food position of this altSnake
-    QStringList newFoodData = strList[1].split(",");
-    bool foodXOk, foodYOk;
-    int foodX = newFoodData[0].toInt(&foodXOk);
-    int foodY = newFoodData[1].toInt(&foodYOk);
-    if (foodXOk && foodYOk) {
-        foodPos[altSnakeSocketId].setX(foodX);
-        foodPos[altSnakeSocketId].setY(foodY);
-    }
+        // figure out food position of this altSnake
+        QStringList newFoodData = strList[1].split(",");
+        bool foodXOk, foodYOk;
+        int foodX = newFoodData[0].toInt(&foodXOk);
+        int foodY = newFoodData[1].toInt(&foodYOk);
 
-    // set altsnake array
-    QStringList altSnakeStrList1 = strList[2].split(":");
-    for (int i = 0; i < ROOM_HEIGHT*ROOM_WIDTH; i++) {
-        QStringList altSnakeStrList2 = altSnakeStrList1[i].split(",");
-        bool xOk, yOk;
-        int altSnakeX = altSnakeStrList2[0].toInt(&xOk);
-        int altSnakeY = altSnakeStrList2[1].toInt(&yOk);
-        if (xOk&&yOk) {
-            altSnake[altSnakeSocketId][i] = QPoint(altSnakeX,altSnakeY);
-            if (QPoint(altSnakeX, altSnakeY) == noSnake) break; // break after the terminator is put in the array
+        if (foodXOk && foodYOk) {            
+            QPoint newFoodPos = QPoint(foodX, foodY);
+            if (foodPos[altSnakeSocketId] != newFoodPos) { // checks if the food is in a new location
+                foodMap[altSnakeSocketId] = true;
+                foodPos[altSnakeSocketId] = newFoodPos;
+            }
+//            foodPos[altSnakeSocketId].setX(foodX);
+//            foodPos[altSnakeSocketId].setY(foodY);
         }
+
+        // set altsnake array
+        QStringList altSnakeStrList1 = strList[2].split(":");
+        for (int i = 0; i < ROOM_HEIGHT*ROOM_WIDTH; i++) {
+            QStringList altSnakeStrList2 = altSnakeStrList1[i].split(",");
+            bool xOk, yOk;
+            int altSnakeX = altSnakeStrList2[0].toInt(&xOk);
+            int altSnakeY = altSnakeStrList2[1].toInt(&yOk);
+            if (xOk&&yOk) {
+                altSnake[altSnakeSocketId][i] = QPoint(altSnakeX,altSnakeY);
+                if (QPoint(altSnakeX, altSnakeY) == noSnake) break; // break after the terminator is put in the array
+            }
+        }
+
     }
 
     multTimer->stop();
@@ -411,14 +426,16 @@ void MainWindow::genNewFood() {
     // if this client isn't connected, use address 0 for food position
     // generates a random point inside the room
     foodPos[(socketId==-1)?0:socketId] = QPoint(QRandomGenerator::global()->bounded(ROOM_WIDTH-4)+2,(QRandomGenerator::global()->bounded(ROOM_HEIGHT-4))+2);
+    foodMap[(socketId==-1)?0:socketId] = true;
 }
 
 bool MainWindow::snakeEatFood(QPoint newPos) {
     // checks if the snake is going to be on top of some food
     // this is to clean up the movePlayer logic
 
-    for (QPoint p : foodPos) {
-        if (newPos == p) {
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (newPos == foodPos[i]) {
+            foodMap[i] = false;
             return true;
         }
     }
