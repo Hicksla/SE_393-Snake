@@ -9,12 +9,15 @@ MainWindow::MainWindow(QWidget *parent)
     // multiplayer
 //    connectToServer(QHostAddress("ordos.xorsoftworks.com"), 8000);
 //    connectToServer(QHostAddress("3.139.31.84"), 8005);
-    connectToServer(QHostAddress("127.0.0.1"), 8005);
+    connectToServer(serverAddress, clientPort);
 
     // timer to send and read tcp data
-    connect(multTimer, &QTimer::timeout, this, &MainWindow::readData);
+//    connect(multTimer, &QTimer::timeout, this, &MainWindow::readData);
     connect(multTimer, &QTimer::timeout, this, &MainWindow::sendData);
+    connect(&clientSocket, &QUdpSocket::readyRead, this, &MainWindow::readData);
+//    connect(&clientSocket, SIGNAL(error(&QAbstractSocket::SocketError)), this, SLOT(onSocketError(QAbstractSocket::SocketError)));
 
+     qDebug() << "Client port" << clientPort;
     // start the timer
     multTimer->start(1000);
 
@@ -152,7 +155,7 @@ void MainWindow::movePlayer() {
             // each client is in charge of changing it's food tile
             if (p == foodPos[socketId]) {
                 genNewFood();
-                qDebug() << "alt eat";
+//                qDebug() << "alt eat";
             }
         }
     }
@@ -325,21 +328,31 @@ void MainWindow::restartRun() {
 
 // multiplayer
 void MainWindow::connectToServer(const QHostAddress &address, quint16 port) {
-    clientSocket.connectToHost(address, port);
+    clientSocket.bind(address, port);
+//    clientSocket.connectToHost(address, port);
 }
 
 void MainWindow::readData() {
+//    qDebug() << "read";
     if (socketId == -1) {
         setId();
+
         return;
     }
 
-    QString data(clientSocket.readAll());
-    if (data=="") return;
-    QStringList messages = data.split("#");
+//    QString data(clientSocket.readAll());
+    QByteArray data;
+    data.resize(clientSocket.pendingDatagramSize());
+
+    clientSocket.readDatagram(data.data(), data.size());
+
+//    qDebug() << data;
+
+//    QList<QByteArray> messages = data.split('#');
 //    qDebug() << messages.size();
-    for (QString& message : messages) {
-        QStringList strList = message.split("_");
+//    for (QByteArray& message: messages) {
+//        QList<QByteArray> strList = message.split('_');
+        QList<QByteArray> strList = data.split('_');
 
         // figure out socket id of incoming snake
         bool ok;
@@ -347,7 +360,7 @@ void MainWindow::readData() {
         if (!ok) return;
 
         // figure out food position of this altSnake
-        QStringList newFoodData = strList[1].split(",");
+        QList<QByteArray> newFoodData = strList[1].split(',');
         bool foodXOk, foodYOk;
         int foodX = newFoodData[0].toInt(&foodXOk);
         int foodY = newFoodData[1].toInt(&foodYOk);
@@ -363,9 +376,9 @@ void MainWindow::readData() {
         }
 
         // set altsnake array
-        QStringList altSnakeStrList1 = strList[2].split(":");
+        QList<QByteArray> altSnakeStrList1 = strList[2].split(':');
         for (int i = 0; i < ROOM_HEIGHT*ROOM_WIDTH; i++) {
-            QStringList altSnakeStrList2 = altSnakeStrList1[i].split(",");
+            QList<QByteArray> altSnakeStrList2 = altSnakeStrList1[i].split(',');
             bool xOk, yOk;
             int altSnakeX = altSnakeStrList2[0].toInt(&xOk);
             int altSnakeY = altSnakeStrList2[1].toInt(&yOk);
@@ -375,7 +388,7 @@ void MainWindow::readData() {
             }
         }
 
-    }
+//    }
 
     multTimer->stop();
     multTimer->start(50);
@@ -383,13 +396,19 @@ void MainWindow::readData() {
 }
 
 void MainWindow::setId() {
+
+    QByteArray dataIn;
+    dataIn.resize(clientSocket.pendingDatagramSize());
+    clientSocket.readDatagram(dataIn.data(), dataIn.size());
+    qDebug() << dataIn;
+
     // split at '$' because the first sent data will be the socketId, but there may be extra data in the buffer (from other clients)
-    QByteArrayList data = clientSocket.readAll().split('$');
+    QByteArrayList  data = dataIn.split('$');
     bool ok;
     int tmpSocketId = data[0].toInt(&ok);
     if (ok) {
         socketId = tmpSocketId;
-        foodPos[0] = QPoint(-1,-2);
+        foodPos[0] = noFood;
         genNewFood();
     }
     qDebug() << socketId;
@@ -398,6 +417,17 @@ void MainWindow::setId() {
 void MainWindow::sendData() {
     // don't send data if we don't have a socketId yet
     if (socketId == -1) {
+//        setId();
+
+        if (clientSocket.hasPendingDatagrams()) {
+            qDebug() << "setId";
+
+            setId();
+        } else {
+            qDebug() << "connectMe";
+            QString sendStr = "connectMe";
+            clientSocket.writeDatagram(sendStr.toLocal8Bit(), serverAddress, serverPort);
+        }
         return;
     }
 
@@ -415,7 +445,8 @@ void MainWindow::sendData() {
     QString strData = QString::number(socketId)+"_" +foodStr+"_"+snakeStr+"_";
 
     // write the data as a QByteArray (that's the kind of data QTcpSocket deals with)
-    clientSocket.write(strData.toLocal8Bit());
+//    clientSocket.write(strData.toLocal8Bit());
+    /*qDebug() << "write return" <<*/ clientSocket.writeDatagram(strData.toLocal8Bit(), serverAddress, serverPort);
 
     multTimer->stop();
     multTimer->start(50);

@@ -8,7 +8,7 @@
 #include <QKeyEvent>
 #include <QTimer>
 #include <QRandomGenerator>
-#include <QTcpSocket>
+#include <QUdpSocket>
 #include <QHostAddress>
 
 QT_BEGIN_NAMESPACE
@@ -70,8 +70,8 @@ public:
     QPoint noSnake = QPoint(-1,-1); // spot to put snake null
     QPoint noFood = QPoint(-1,-2); // spot to put food null
 
-    QTcpSocket clientSocket;
-    QDataStream clientStream;
+    QUdpSocket clientSocket;
+//    QDataStream clientStream;
 
     QTimer *multTimer = new QTimer(this);
 
@@ -82,8 +82,13 @@ public:
     void initRoom();
     void genNewFood();
     bool snakeEatFood(QPoint newPos);
+    void onSocketError(QAbstractSocket::SocketError socketError);
 
     int socketId = -1;
+    QHostAddress serverAddress = QHostAddress("3.139.31.84");
+    int serverPort = 8005;
+    QHostAddress clientAddress = QHostAddress("127.0.0.1");
+    int clientPort = 8006+int(QRandomGenerator::global()->bounded(12));
 
 private:
     Ui::MainWindow *ui;
