@@ -46,7 +46,7 @@ public:
     void exitFromPause();
     void restartFromPause();
     void startMenu();
-    int sliderLogic();
+    void sliderLogic();
 
     QFrame *pauseScreen;
     QFrame *startScreen;

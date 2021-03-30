@@ -5,10 +5,9 @@ MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
 {
-
     // multiplayer
 //    connectToServer(QHostAddress("ordos.xorsoftworks.com"), 8000);
-    connectToServer(QHostAddress("3.139.31.84"), 8000);
+    connectToServer(QHostAddress("3.139.31.84"), 8000); //aws server ip adress
 
     // timer to send and read tcp data
     connect(multTimer, &QTimer::timeout, this, &MainWindow::readData);
@@ -52,6 +51,7 @@ MainWindow::MainWindow(QWidget *parent)
     timer->start(speed);
 
     //set up the mainwindow after we're done with the start menu
+
     //ui->setupUi(this);
 }
 
@@ -292,7 +292,9 @@ void MainWindow::endRun() {
     foodPos[socketId] = noFood;
     sendData();
     timer->stop();
-    if (QMessageBox::question(this,"You died", "Your length was: "+QString::number(snakeLen)+"\nWould you like to restart?") == QMessageBox::Yes) {
+    static int highScore=0;
+    if(snakeLen>highScore){highScore=snakeLen;}
+    if (QMessageBox::question(this,"You died", "High score this round: "+ QString::number(highScore)+"\nWould you like to restart?") == QMessageBox::Yes) {
         restartRun();
     } else {
 
@@ -408,7 +410,7 @@ void MainWindow::setId() {
 
 void MainWindow::sendData() {
     // don't send data if we don't have a socketId yet
-    if (socketId == -1) {
+    if ((socketId == -1)|(startup)) {
         return;
     }
 
@@ -513,15 +515,24 @@ void MainWindow::exitFromPause()
     isPaused = !isPaused;
     if(startup)
     {startScreen->close();startup=false;QCoreApplication::quit();}
-    else{pauseScreen->close();endRun();}
+    else
+    {
+        if(QMessageBox::question(this,"Confirm Exit","Do you really want to quit?") == QMessageBox::Yes) {
+            this->update();
+            pauseScreen->close();
+            QCoreApplication::quit();
+        } else {
+            this->update();
+        }
+    }
 }
 void MainWindow::restartFromPause()
 {
-    //restart button from pause
+    //exit button from pause
+    isPaused = !isPaused;
     if(startup)
-    {startScreen->close();startup=false;}
-    else{pauseScreen->close();isPaused = !isPaused;}
-    restartRun();
+    {startScreen->close();startup=false;QCoreApplication::quit();}
+    else{pauseScreen->close();endRun();}
 }
 void MainWindow::startMenu()
 {
@@ -540,11 +551,19 @@ void MainWindow::startMenu()
     startScreen->setLineWidth(10);
 
     QLabel *titleMessage = new QLabel("Snake",startScreen);
-    titleMessage->setGeometry(320,50,250,75);
+    titleMessage->setGeometry(325,50,250,75);
     titleMessage->setFont(QFont("MS Shell Dlg 2",40));
 
-    diffMessage = new QLabel("Select Difficulty: Easy",startScreen);
-    diffMessage->setGeometry(250,250,400,75);
+    QLabel *ctrlMessage0 = new QLabel("Controls:",startScreen);
+    ctrlMessage0->setGeometry(100,250,650,75);
+    ctrlMessage0->setFont(QFont("MS Shell Dlg 2",20, QFont::Bold));
+
+    QLabel *ctrlMessage = new QLabel("WASD: move snake, Space: pause, R: restart",startScreen);
+    ctrlMessage->setGeometry(235,250,650,75);
+    ctrlMessage->setFont(QFont("MS Shell Dlg 2",18));
+
+    diffMessage = new QLabel("Select Difficulty: Slug (easy)",startScreen);
+    diffMessage->setGeometry(210,350,500,75);
     diffMessage->setFont(QFont("MS Shell Dlg 2",24));
 
     diff = new QSlider(Qt::Horizontal,startScreen);
@@ -553,7 +572,7 @@ void MainWindow::startMenu()
     diff->setValue(0);
     diff->setTickPosition(QSlider::TicksBelow);
     diff->setTickInterval(1);
-    diff->setGeometry(250,350,300,50);
+    diff->setGeometry(250,450,300,50);
     connect(diff, &QSlider::valueChanged,this,&MainWindow::sliderLogic);
 
     QPushButton *continueButton;
@@ -566,30 +585,32 @@ void MainWindow::startMenu()
     exitButton->setGeometry(QRect(50,650,700,50));
     connect(exitButton, &QPushButton::clicked,this,&MainWindow::exitFromPause);
 
-
-
     startScreen->show();
     //need to update(); when we leave
 }
-int MainWindow::sliderLogic()
+void MainWindow::sliderLogic()
 {
     //slider logic here
     QString tempMsg;
     switch(diff->value())
     {
     case 0:
-        tempMsg="Easy";
+        tempMsg="Slug (easy)";
         //setDifficulty(300);
+        difficulty = 800;
         break;
     case 1:
-        tempMsg="Medium";
+        tempMsg="Worm (medium)";
         //setDifficulty(500);
+        difficulty = 500;
         break;
     case 2:
-        tempMsg="Hard";
+        tempMsg="Python (hard)";
         //setDifficulty(800);
+        difficulty = 100;
         break;
     }
 
+    initSnake();
     diffMessage->setText("Select Difficulty: " + tempMsg);
 }
