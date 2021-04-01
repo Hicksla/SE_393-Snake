@@ -294,7 +294,7 @@ void MainWindow::endRun() {
     timer->stop();
     static int highScore=0;
     if(snakeLen>highScore){highScore=snakeLen;}
-    if (QMessageBox::question(this,"You died", "High score this round: "+ QString::number(highScore)+"\nWould you like to restart?") == QMessageBox::Yes) {
+    if (QMessageBox::question(this,"You died", "Your score: " + QString::number(snakeLen) + "\nHigh score this round: "+ QString::number(highScore)+"\nWould you like to restart?") == QMessageBox::Yes) {
         restartRun();
     } else {
 

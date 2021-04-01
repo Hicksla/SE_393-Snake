@@ -1,0 +1,6 @@
+<RCC>
+    <qresource prefix="/sounds">
+        <file>sawsquarenoise - Tittle Screen.mp3</file>
+        <file>sawsquarenoise - Stage 1.mp3</file>
+    </qresource>
+</RCC>

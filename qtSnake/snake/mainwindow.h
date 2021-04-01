@@ -13,6 +13,8 @@
 #include <QPushButton>
 #include <QLabel>
 #include <QSlider>
+//#include <QMediaPlayer>
+
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
