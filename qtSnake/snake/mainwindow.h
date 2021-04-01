@@ -10,6 +10,9 @@
 #include <QRandomGenerator>
 #include <QUdpSocket>
 #include <QHostAddress>
+#include <QPushButton>
+#include <QLabel>
+#include <QSlider>
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -38,6 +41,17 @@ public:
     void restartRun();
     void setSnakeColor(QColor color);
     void setSnakeColor(int red, int green, int blue);
+    void pauseMenu();
+    void continueFromPause();
+    void exitFromPause();
+    void restartFromPause();
+    void startMenu();
+    void sliderLogic();
+
+    QFrame *pauseScreen;
+    QFrame *startScreen;
+    QSlider *diff;
+    QLabel *diffMessage;
 
     // game room co-ordinates
 
@@ -59,6 +73,7 @@ public:
     int speed = 300;
     int difficulty = 300;
     bool isPaused = false;
+    bool startup = true;
 
     // multiplayer setup
 

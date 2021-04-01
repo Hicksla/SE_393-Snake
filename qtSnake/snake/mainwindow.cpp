@@ -56,7 +56,8 @@ MainWindow::MainWindow(QWidget *parent)
     // start the timer
     timer->start(speed);
 
-    ui->setupUi(this);
+    //set up the mainwindow after we're done with the start menu
+    //ui->setupUi(this);
 }
 
 MainWindow::~MainWindow()
@@ -66,6 +67,18 @@ MainWindow::~MainWindow()
 
 
 void MainWindow::paintEvent(QPaintEvent *event) {
+    // if the game hasn't started, don't draw anything
+        static bool startOpen =false;
+        if (startup)
+        {
+            if(!startOpen) {startMenu();startOpen = true;}
+            return;
+        }
+        else
+        {
+            if(startOpen) {ui->setupUi(this); startOpen =false;}
+        }
+
     QPainter painter(this);
 
     // draw the entire room
@@ -232,7 +245,8 @@ void MainWindow::snakeEat(QPoint newPos) {
 }
 
 void MainWindow::keyPressEvent(QKeyEvent *event) {
-
+    //if we haven't left the start menu, button presses will only cause problems
+    if(startup){return;}
 
     if (event->key() == 87) { // w
         dir = 1;
@@ -248,6 +262,7 @@ void MainWindow::keyPressEvent(QKeyEvent *event) {
     }
     else if (event->key() == Qt::Key_Space) { // spacebar
         isPaused = !isPaused;
+        pauseMenu();
     }
     else if (event->key() == Qt::Key_R) { // r
         restartRun();
@@ -273,13 +288,15 @@ void MainWindow::endRun() {
     foodPos[socketId] = noFood;
     sendData();
     timer->stop();
-    if (QMessageBox::question(this,"You died", "Your length was: "+QString::number(snakeLen)+"\nWould you like to restart?") == QMessageBox::Yes) {
-        restartRun();
-    } else {
+    static int highScore=0;
+    if(snakeLen>highScore){highScore=snakeLen;}
+    if (QMessageBox::question(this,"You died","Your score: "+ QString::number(snakeLen)+ "\nHigh score this round: "+ QString::number(highScore)+"\nWould you like to restart?") == QMessageBox::Yes) {
+            restartRun();
+        } else {
 
-        this->update();
-        QCoreApplication::quit();
-    }
+            this->update();
+            QCoreApplication::quit();
+        }
 }
 
 void MainWindow::initSnake() {
@@ -415,8 +432,8 @@ void MainWindow::setId() {
 }
 
 void MainWindow::sendData() {
-    // don't send data if we don't have a socketId yet
-    if (socketId == -1) {
+    // don't send data if we don't have a socketId yet or are still in start menu
+    if ((socketId == -1)|(startup)) {
 //        setId();
 
         if (clientSocket.hasPendingDatagrams()) {
@@ -472,3 +489,167 @@ bool MainWindow::snakeEatFood(QPoint newPos) {
     }
     return false;
 }
+
+void MainWindow::pauseMenu()
+{
+    //pause menu here
+    //options: Continue (isPaused = !isPaused;), Restart (restartRun), Exit (endRun)
+    //see score here?
+    //what happens if an altSnake hits us when we're paused?
+    //should this pause all snakes?
+
+    QColor snakeColor = (((socketId==-1)?QColor(0,255,0):snakeColors[socketId]));
+    QPalette pal = palette();
+    pal.setColor(QPalette::WindowText, snakeColor);
+    pal.setColor(backgroundRole(), Qt::black);
+
+    pauseScreen = new QFrame;
+    pauseScreen->resize(600,400);
+    pauseScreen->setWindowTitle("Pause Screen");
+    pauseScreen->setFrameStyle(QFrame::Box|QFrame::Plain);
+    pauseScreen->setPalette(pal);
+    pauseScreen->setLineWidth(10);
+
+    QLabel *pauseMessage = new QLabel("Game Paused",pauseScreen);
+    pauseMessage->setGeometry(200,25,250,50);
+    pauseMessage->setFont(QFont("MS Shell Dlg 2",24));
+    //pauseMessage->setAlignment(Qt::AlignCenter);
+
+    QLabel *scoreMessage = new QLabel("Your score: "+QString::number(snakeLen),pauseScreen);
+    scoreMessage->setGeometry(230,75,250,50);
+    scoreMessage->setFont(QFont("MS Shell Dlg 2",18));
+    //scoreMessage->setAlignment(Qt::AlignCenter);
+
+    QPushButton *continueButton;
+    continueButton = new QPushButton("Continue", pauseScreen);
+    continueButton->setGeometry(QRect(50,175,500,50));
+    connect(continueButton, &QPushButton::clicked, this,&MainWindow::continueFromPause);
+
+    QPushButton *restartButton;
+    restartButton = new QPushButton("Restart", pauseScreen);
+    restartButton->setGeometry(QRect(50,250,500,50));
+    connect(restartButton, &QPushButton::clicked,this,&MainWindow::restartFromPause);
+
+    QPushButton *exitButton;
+    exitButton = new QPushButton("Exit", pauseScreen);
+    exitButton->setGeometry(QRect(50,325,500,50));
+    connect(exitButton, &QPushButton::clicked,this,&MainWindow::exitFromPause);
+
+    pauseScreen->show();
+
+
+}
+void MainWindow::continueFromPause()
+{
+    //continue button from pause
+    if(startup)
+    {startScreen->close();startup=false;}
+    else{pauseScreen->close();isPaused = !isPaused;}
+    update();
+}
+void MainWindow::exitFromPause()
+{
+    //exit button from pause
+    isPaused = !isPaused;
+    if(startup)
+    {startScreen->close();startup=false;QCoreApplication::quit();}
+    else
+    {
+        if(QMessageBox::question(this,"Confirm Exit","Do you really want to quit?") == QMessageBox::Yes) {
+            this->update();
+            pauseScreen->close();
+            QCoreApplication::quit();
+        } else {
+            this->update();
+        }
+    }
+}
+void MainWindow::restartFromPause()
+{
+    //exit button from pause
+    isPaused = !isPaused;
+    if(startup)
+    {startScreen->close();startup=false;QCoreApplication::quit();}
+    else{pauseScreen->close();endRun();}
+}
+void MainWindow::startMenu()
+{
+    //start menu goes here
+    //startup=false;
+    QColor snakeColor = (((socketId==-1)?QColor(0,255,0):snakeColors[socketId]));
+    QPalette pal = palette();
+    pal.setColor(QPalette::WindowText, snakeColor);
+    pal.setColor(backgroundRole(), Qt::black);
+
+    startScreen = new QFrame;
+    startScreen->resize(800,800);
+    startScreen->setWindowTitle("Start Screen");
+    startScreen->setFrameStyle(QFrame::Box|QFrame::Plain);
+    startScreen->setPalette(pal);
+    startScreen->setLineWidth(10);
+
+    QLabel *titleMessage = new QLabel("Snake",startScreen);
+    titleMessage->setGeometry(325,50,250,75);
+    titleMessage->setFont(QFont("MS Shell Dlg 2",40));
+
+    QLabel *ctrlMessage0 = new QLabel("Controls:",startScreen);
+    ctrlMessage0->setGeometry(100,250,650,75);
+    ctrlMessage0->setFont(QFont("MS Shell Dlg 2",20, QFont::Bold));
+
+    QLabel *ctrlMessage = new QLabel("WASD: move snake, Space: pause, R: restart",startScreen);
+    ctrlMessage->setGeometry(235,250,650,75);
+    ctrlMessage->setFont(QFont("MS Shell Dlg 2",18));
+
+    diffMessage = new QLabel("Select Difficulty: Slug (easy)",startScreen);
+    diffMessage->setGeometry(210,350,500,75);
+    diffMessage->setFont(QFont("MS Shell Dlg 2",24));
+
+    diff = new QSlider(Qt::Horizontal,startScreen);
+    diff->setMaximum(2);
+    diff->setMinimum(0);
+    diff->setValue(0);
+    diff->setTickPosition(QSlider::TicksBelow);
+    diff->setTickInterval(1);
+    diff->setGeometry(250,450,300,50);
+    connect(diff, &QSlider::valueChanged,this,&MainWindow::sliderLogic);
+
+    QPushButton *continueButton;
+    continueButton = new QPushButton("Start Game", startScreen);
+    continueButton->setGeometry(QRect(50,550,700,50));
+    connect(continueButton, &QPushButton::clicked, this,&MainWindow::continueFromPause);
+
+    QPushButton *exitButton;
+    exitButton = new QPushButton("Exit Game", startScreen);
+    exitButton->setGeometry(QRect(50,650,700,50));
+    connect(exitButton, &QPushButton::clicked,this,&MainWindow::exitFromPause);
+
+    startScreen->show();
+    //need to update(); when we leave
+}
+void MainWindow::sliderLogic()
+{
+    //slider logic here
+    QString tempMsg;
+    switch(diff->value())
+    {
+    case 0:
+        tempMsg="Slug (easy)";
+        //setDifficulty(300);
+        difficulty = 800;
+        break;
+    case 1:
+        tempMsg="Worm (medium)";
+        //setDifficulty(500);
+        difficulty = 500;
+        break;
+    case 2:
+        tempMsg="Python (hard)";
+        //setDifficulty(800);
+        difficulty = 100;
+        break;
+    }
+
+    initSnake();
+    diffMessage->setText("Select Difficulty: " + tempMsg);
+}
+
